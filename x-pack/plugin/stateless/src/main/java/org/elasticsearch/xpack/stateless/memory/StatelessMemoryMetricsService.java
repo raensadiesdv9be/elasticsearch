@@ -7,12 +7,14 @@
 
 package org.elasticsearch.xpack.stateless.memory;
 
+import org.apache.lucene.util.RamUsageEstimator;
 import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateListener;
 import org.elasticsearch.cluster.ShardAndIndexHeapUsage;
 import org.elasticsearch.cluster.ShardHeapUsageEstimates;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
+import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.metadata.ProjectId;
 import org.elasticsearch.cluster.metadata.ProjectMetadata;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -169,6 +171,7 @@ public class StatelessMemoryMetricsService implements ClusterStateListener {
      */
     private final Map<ShardId, ShardMemoryMetrics> shardMemoryMetrics = new ConcurrentHashMap<>();
     private volatile int totalIndices;
+    private volatile long indexMetadataHeapBytes;
     private final AtomicReference<IndexingOperationsMemoryRequirements> indexingOperationsHeapMemoryRequirementsRef =
         new AtomicReference<>();
 
@@ -282,6 +285,10 @@ public class StatelessMemoryMetricsService implements ClusterStateListener {
 
     public long getIndexMemoryOverhead() {
         return INDEX_MEMORY_OVERHEAD * totalIndices;
+    }
+
+    public long getIndexMetadataHeapBytes() {
+        return indexMetadataHeapBytes;
     }
 
     public long getNodeBaseHeapEstimateInBytes() {
@@ -495,6 +502,7 @@ public class StatelessMemoryMetricsService implements ClusterStateListener {
             return;
         }
         this.totalIndices = event.state().metadata().getTotalNumberOfIndices();
+        this.indexMetadataHeapBytes = calculateIndexMetadataHeapBytes(event.state().metadata());
 
         // new master use case: no indices exist in internal map
         if (event.nodesDelta().masterNodeChanged() || initialized == false) {
@@ -593,6 +601,14 @@ public class StatelessMemoryMetricsService implements ClusterStateListener {
         }
 
         clusterStateVersion = event.state().version();
+    }
+
+    private static long calculateIndexMetadataHeapBytes(Metadata metadata) {
+        long total = 0;
+        for (IndexMetadata indexMetadata : metadata.indicesAllProjects()) {
+            total += RamUsageEstimator.sizeOfObject(indexMetadata);
+        }
+        return total;
     }
 
     public boolean isInitialized() {

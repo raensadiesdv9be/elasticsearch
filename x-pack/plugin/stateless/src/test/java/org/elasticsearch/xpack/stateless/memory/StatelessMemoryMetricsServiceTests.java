@@ -7,6 +7,7 @@
 
 package org.elasticsearch.xpack.stateless.memory;
 
+import org.apache.lucene.util.RamUsageEstimator;
 import org.elasticsearch.action.support.replication.ClusterStateCreationUtils;
 import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterName;
@@ -462,6 +463,45 @@ public class StatelessMemoryMetricsServiceTests extends ESTestCase {
                 equalTo(indexingOperationsHeapMemoryRequirements)
             );
         }
+    }
+
+    public void testGetIndexMetadataHeapBytesZeroWithNoIndices() {
+        DiscoveryNodes discoveryNodes = DiscoveryNodes.builder()
+            .add(DiscoveryNodeUtils.create("node_0"))
+            .localNodeId("node_0")
+            .masterNodeId("node_0")
+            .build();
+        ClusterState clusterState = ClusterState.builder(new ClusterName("test")).nodes(discoveryNodes).build();
+        service.clusterChanged(new ClusterChangedEvent("test", clusterState, ClusterState.EMPTY_STATE));
+        assertThat(service.getIndexMetadataHeapBytes(), equalTo(0L));
+        assertThat(service.getIndexMemoryOverhead(), equalTo(0L));
+    }
+
+    public void testGetIndexMetadataHeapBytesMatchesRamUsageEstimatorSum() {
+        ClusterState clusterState = randomInitialTwoNodeClusterState(between(1, 5));
+        service.clusterChanged(new ClusterChangedEvent("test", clusterState, ClusterState.EMPTY_STATE));
+
+        long expected = 0;
+        for (var indexMetadata : clusterState.metadata().indicesAllProjects()) {
+            expected += RamUsageEstimator.sizeOfObject(indexMetadata);
+        }
+        assertThat(service.getIndexMetadataHeapBytes(), equalTo(expected));
+        assertThat(
+            service.getIndexMemoryOverhead(),
+            equalTo(StatelessMemoryMetricsService.INDEX_MEMORY_OVERHEAD * clusterState.metadata().getTotalNumberOfIndices())
+        );
+    }
+
+    public void testGetIndexMetadataHeapBytesScalesWithIndexCountAndUpdatesWithClusterChange() {
+        ClusterState oneIndexClusterState = randomInitialTwoNodeClusterState(1);
+        service.clusterChanged(new ClusterChangedEvent("test", oneIndexClusterState, ClusterState.EMPTY_STATE));
+        long oneIndexHeapBytes = service.getIndexMetadataHeapBytes();
+
+        ClusterState manyIndicesClusterState = randomInitialTwoNodeClusterState(10);
+        service.clusterChanged(new ClusterChangedEvent("test", manyIndicesClusterState, ClusterState.EMPTY_STATE));
+        long manyIndicesHeapBytes = service.getIndexMetadataHeapBytes();
+
+        assertThat(manyIndicesHeapBytes, greaterThan(oneIndexHeapBytes));
     }
 
     private ClusterState randomInitialTwoNodeClusterState(int numberOfIndices) {
