@@ -4650,14 +4650,22 @@ public class LogicalPlanOptimizerTests extends AbstractLogicalPlanOptimizerTests
     /**
      * A constant field folds the whole predicate (through the evaluator) before the LogicalVerifier runs, so the
      * pattern checks must guard that fold path too — otherwise a null pattern NPEs and a multivalue pattern silently
-     * folds to false. Each bad pattern must fail; a valid one still folds normally.
+     * folds to false. The field itself may also be a constant null, which folds to constant false <em>before</em> the
+     * pattern is looked at; the pattern must still be validated there, so an author-error pattern fails loudly no matter
+     * what the field is. Each bad pattern must fail — null/multivalue with a shape error, malformed with the verifier's
+     * framed message — and a valid one still folds normally.
      */
     public void testMvLikeConstantFieldStillValidatesPattern() {
+        // Null and multivalue patterns: shape errors, over both a constant string field and a constant null field.
         for (String q : List.of(
             "row x = mv_like(\"abc\", null)",
             "row x = mv_like(\"abc\", [\"a*\", \"b*\"])",
             "row x = mv_rlike(\"abc\", null)",
-            "row x = mv_rlike(\"abc\", [\"a.*\", \"b.*\"])"
+            "row x = mv_rlike(\"abc\", [\"a.*\", \"b.*\"])",
+            "row x = mv_like(null, null)",
+            "row x = mv_like(null, [\"a*\", \"b*\"])",
+            "row x = mv_rlike(null, null)",
+            "row x = mv_rlike(null, [\"a.*\", \"b.*\"])"
         )) {
             Exception e = expectThrows(Exception.class, () -> plan(q));
             assertThat(
@@ -4666,8 +4674,14 @@ public class LogicalPlanOptimizerTests extends AbstractLogicalPlanOptimizerTests
                 anyOf(containsString("must not be null"), containsString("must be a single pattern string"))
             );
         }
-        // A valid constant pattern over a constant field folds normally (to false here) with no error.
+        // Malformed patterns: the verifier's framed message, on the fold path and with a null field too.
+        for (String q : List.of("row x = mv_rlike(\"abc\", \"(\")", "row x = mv_rlike(null, \"(\")")) {
+            Exception e = expectThrows(Exception.class, () -> plan(q));
+            assertThat("expected [" + q + "] to fail with a framed pattern error", e.getMessage(), containsString("invalid pattern"));
+        }
+        // A valid constant pattern folds normally (to false here) with no error, over a string field and a null field.
         assertNotNull(plan("row x = mv_like(\"abc\", \"a*\")"));
+        assertNotNull(plan("row x = mv_like(null, \"a*\")"));
     }
 
     /**

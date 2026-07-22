@@ -273,7 +273,7 @@ required_capability: dataset_in_from_command
 dataset: employees_ds: "{{employees}}"
 
 FROM employees_ds
-| WHERE emp_no <= 10002 AND mv_rlike(job_positions, "Senior.*")
+| WHERE emp_no <= 10004 AND mv_rlike(job_positions, "Senior.*")
 | KEEP emp_no
 | SORT emp_no
 ;

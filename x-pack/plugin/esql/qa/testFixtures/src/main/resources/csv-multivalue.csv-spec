@@ -258,7 +258,7 @@ required_capability: dataset_in_from_command
 dataset: employees_brackets: "{{employees}}" WITH {"multi_value_syntax": "brackets"}
 
 FROM employees_brackets
-| WHERE emp_no <= 10002 AND mv_rlike(job_positions, "Senior.*")
+| WHERE emp_no <= 10004 AND mv_rlike(job_positions, "Senior.*")
 | KEEP emp_no
 | SORT emp_no
 ;

@@ -153,14 +153,23 @@ public abstract class MvRegexMatch extends BinaryScalarFunction
 
     @Override
     public final ExpressionEvaluator.Factory toEvaluator(ToEvaluator toEvaluator) {
-        // A null-typed field has no values to match, so the predicate is constant false. patternString() validates the
-        // pattern (throwing on null/multivalue) rather than trusting a prior check: a constant field folds the whole
+        // Validate the pattern here, and before the null-field short-circuit below. A constant field folds the whole
         // predicate through here before postOptimizationVerification runs, so this path cannot assume the pattern was
-        // already checked.
+        // already checked — and a null-typed field would otherwise fold to constant false before the pattern is even
+        // looked at, silently accepting an author error. patternString() throws on a null or multivalue pattern;
+        // validatePattern on a malformed one. Both are reframed to the same message the verifier produces, so an
+        // author-error pattern fails loudly on every path, regardless of the field.
+        String pattern = patternString();
+        try {
+            validatePattern(pattern);
+        } catch (InvalidArgumentException | IllegalArgumentException e) {
+            throw new InvalidArgumentException("invalid pattern [{}] for [{}]: {}", pattern, sourceText(), e.getMessage());
+        }
+        // A null-typed field has no values to match, so the predicate is constant false.
         if (left().dataType() == DataType.NULL) {
             return ConstantEvaluators.CONSTANT_FALSE_FACTORY;
         }
-        return buildEvaluator(toEvaluator, patternString());
+        return buildEvaluator(toEvaluator, pattern);
     }
 
     /**
